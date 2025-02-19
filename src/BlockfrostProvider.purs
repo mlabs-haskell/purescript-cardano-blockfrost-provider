@@ -1,4 +1,4 @@
-module Cardano.Blockfrost.Provider (module X) where
+module Cardano.Blockfrost (module X) where
 
 import Cardano.Blockfrost.BlockfrostBackend (BlockfrostBackend) as X
 import Cardano.Blockfrost.Service
@@ -63,3 +63,4 @@ import Cardano.Blockfrost.Service
 import Cardano.Blockfrost.BlockfrostProtocolParameters
   ( BlockfrostProtocolParameters(BlockfrostProtocolParameters)
   ) as X
+import Cardano.Blockfrost.Provider (providerForBlockfrostBackend) as X
