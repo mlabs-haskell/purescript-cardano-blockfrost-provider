@@ -8,7 +8,7 @@
   , "bignumber"
   , "bytearrays"
   , "cardano-provider"
-  , "cardano-serialization-lib"
+  , "cardano-data-lite"
   , "cardano-types"
   , "control"
   , "datetime"

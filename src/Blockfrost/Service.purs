@@ -75,7 +75,7 @@ import Cardano.Provider.Error (ClientError(ClientDecodeJsonError, ClientHttpErro
 import Cardano.Provider.ServerConfig (ServerConfig, mkHttpUrl)
 import Cardano.Provider.TxEvaluation (ExecutionUnits, OgmiosDatum, OgmiosScript, OgmiosTxIn, OgmiosTxOutRef, RedeemerPointer, ScriptFailure, TxEvaluationFailure(ScriptFailures, UnparsedError), TxEvaluationR, TxEvaluationResult(TxEvaluationResult), OgmiosTxOut)
 import Cardano.Provider.TxEvaluation as TxEvaluation
-import Cardano.Serialization.Lib (toBytes)
+import Cardano.Data.Lite (toBytes)
 import Cardano.Types (AssetClass(AssetClass), AuxiliaryData, DataHash, GeneralTransactionMetadata(GeneralTransactionMetadata), PlutusData, PoolPubKeyHash, RawBytes, RedeemerTag, ScriptHash, StakePubKeyHash, Transaction, TransactionHash, TransactionInput(TransactionInput), TransactionOutput(TransactionOutput), UtxoMap, Value)
 import Cardano.Types.Address (Address)
 import Cardano.Types.Address as Address
