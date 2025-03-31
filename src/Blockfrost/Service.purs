@@ -7,6 +7,7 @@ module Cardano.Blockfrost.Service
       , DatumCbor
       , EraSummaries
       , EvaluateTransaction
+      , EvaluateTransactionWithAdditionalUtxos
       , LatestBlock
       , LatestEpoch
       , LatestProtocolParameters
@@ -221,8 +222,10 @@ data BlockfrostEndpoint
   | DatumCbor DataHash
   -- /network/eras
   | EraSummaries
-  -- /utils/txs/evaluate/utxos
+  -- /utils/txs/evaluate
   | EvaluateTransaction
+  -- /utils/txs/evaluate/utxos
+  | EvaluateTransactionWithAdditionalUtxos
   -- /blocks/latest
   | LatestBlock
   -- /epochs/latest
@@ -269,7 +272,9 @@ realizeEndpoint endpoint =
     EraSummaries ->
       "/network/eras"
     EvaluateTransaction ->
-      "/utils/txs/evaluate/utxos"
+      "/utils/txs/evaluate?version=6"
+    EvaluateTransactionWithAdditionalUtxos ->
+      "/utils/txs/evaluate/utxos?version=6"
     LatestBlock ->
       "/blocks/latest"
     LatestEpoch ->
@@ -532,6 +537,9 @@ getScriptInfo scriptHash =
 -- Submit / evaluate transaction
 --------------------------------------------------------------------------------
 
+applicationCbor :: MediaType
+applicationCbor = MediaType "application/cbor"
+
 submitTx
   :: Transaction
   -> BlockfrostServiceM (Either ClientError TransactionHash)
@@ -542,11 +550,13 @@ submitTx tx = do
     :: ByteArray
     -> BlockfrostServiceM (Either Affjax.Error (Affjax.Response String))
   request cbor =
-    blockfrostPostRequest SubmitTransaction (MediaType "application/cbor")
+    blockfrostPostRequest SubmitTransaction applicationCbor
       (Just $ Affjax.arrayView $ unwrap cbor)
 
 evaluateTx
-  :: Transaction -> Map OgmiosTxOutRef OgmiosTxOut -> BlockfrostServiceM TxEvaluationR
+  :: Transaction
+  -> Map OgmiosTxOutRef OgmiosTxOut
+  -> BlockfrostServiceM TxEvaluationR
 evaluateTx tx additionalUtxos = do
   resp <- handleBlockfrostResponse <$> request
   case unwrapBlockfrostEvaluateTx <$> resp of
@@ -557,15 +567,22 @@ evaluateTx tx additionalUtxos = do
         err
     Right (Right eval) -> pure eval
   where
+  txCborHex :: String
+  txCborHex = byteArrayToHex $ unwrap $ encodeCbor tx
+
   request :: BlockfrostServiceM (Either Affjax.Error (Affjax.Response String))
-  request = do
-    blockfrostPostRequest EvaluateTransaction MediaType.applicationJSON
-      ( Just $ Affjax.string $ stringifyAeson $
-          encodeAeson
-            { cbor: byteArrayToHex $ unwrap $ encodeCbor tx
-            , additionalUtxoSet: additionalUtxos
-            }
-      )
+  request
+    | Map.isEmpty additionalUtxos =
+        blockfrostPostRequest EvaluateTransaction applicationCbor $ Just $ Affjax.string
+          txCborHex
+    | otherwise = 
+        blockfrostPostRequest EvaluateTransactionWithAdditionalUtxos MediaType.applicationJSON
+          ( Just $ Affjax.string $ stringifyAeson $
+              encodeAeson
+                { cbor: txCborHex
+                , additionalUtxoSet: additionalUtxos
+                }
+          )
 
 --------------------------------------------------------------------------------
 -- Check transaction confirmation status
