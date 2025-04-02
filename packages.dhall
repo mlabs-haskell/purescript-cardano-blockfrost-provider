@@ -194,18 +194,26 @@ let additions =
           , "aff-promise"
           , "affjax"
           , "argonaut-codecs"
+          , "arrays"
+          , "bifunctors"
           , "cardano-types"
           , "console"
           , "effect"
           , "either"
+          , "exceptions"
+          , "foldable-traversable"
+          , "lists"
           , "maybe"
           , "newtype"
           , "ordered-collections"
           , "prelude"
+          , "strings"
+          , "these"
+          , "tuples"
           , "uint"
           ]
         , repo = "https://github.com/mlabs-haskell/purescript-cardano-provider"
-        , version = "v1.1.0"
+        , version = "1146a5a59facd20716bb4c516278c70cfe5159c3"
         }
       }
 in  upstream // additions

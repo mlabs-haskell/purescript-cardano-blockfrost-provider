@@ -74,8 +74,7 @@ import Cardano.Blockfrost.Helpers (decodeAssetClass)
 import Cardano.Provider.Affjax (request) as Affjax
 import Cardano.Provider.Error (ClientError(ClientDecodeJsonError, ClientHttpError, ClientHttpResponseError, ClientOtherError), GetTxMetadataError(GetTxMetadataTxNotFoundError, GetTxMetadataClientError, GetTxMetadataMetadataEmptyOrMissingError), ServiceError(ServiceBlockfrostError))
 import Cardano.Provider.ServerConfig (ServerConfig, mkHttpUrl)
-import Cardano.Provider.TxEvaluation (ExecutionUnits, OgmiosDatum, OgmiosScript, OgmiosTxIn, OgmiosTxOutRef, RedeemerPointer, ScriptFailure, TxEvaluationFailure(ScriptFailures, UnparsedError), TxEvaluationR, TxEvaluationResult(TxEvaluationResult), OgmiosTxOut)
-import Cardano.Provider.TxEvaluation as TxEvaluation
+import Cardano.Provider.OgmiosTypes (ExecutionUnits, OgmiosDatum, OgmiosDecodeError(InvalidRpcError, InvalidRpcResponse, ErrorResponse), OgmiosScript, OgmiosTxIn, OgmiosTxOutRef, RedeemerPointer, ScriptFailure, TxEvaluationFailure(ScriptFailures, UnparsedError), TxEvaluationR, TxEvaluationResult(TxEvaluationResult), OgmiosTxOut, decodeOgmios)
 import Cardano.Data.Lite (toBytes)
 import Cardano.Types (AssetClass(AssetClass), AuxiliaryData, DataHash, GeneralTransactionMetadata(GeneralTransactionMetadata), PlutusData, PoolPubKeyHash, RawBytes, RedeemerTag, ScriptHash, StakePubKeyHash, Transaction, TransactionHash, TransactionInput(TransactionInput), TransactionOutput(TransactionOutput), UtxoMap, Value)
 import Cardano.Types.Address (Address)
@@ -854,20 +853,14 @@ instance Show BlockfrostEvaluateTx where
   show = genericShow
 
 instance DecodeAeson BlockfrostEvaluateTx where
-  decodeAeson aeson = success <|> failure <#> BlockfrostEvaluateTx
-    where
-    success :: Either JsonDecodeError (Either Aeson TxEvaluationR)
-    success = do
-      { result: BlockfrostTxEvaluationR res }
-        :: { result :: BlockfrostTxEvaluationR } <- decodeAeson aeson
-      pure $ Right res
-
-    failure :: Either JsonDecodeError (Either Aeson TxEvaluationR)
-    failure = pure $ Left aeson
-
+  decodeAeson aeson =
+    BlockfrostEvaluateTx <$> either (const (pure (Left aeson))) (pure <<< Right)
+      (decodeOgmios aeson)
+    
 unwrapBlockfrostEvaluateTx :: BlockfrostEvaluateTx -> Either Aeson TxEvaluationR
 unwrapBlockfrostEvaluateTx (BlockfrostEvaluateTx ei) = ei
 
+{-
 --
 -- TxEvaluationR parsing
 --
@@ -1051,6 +1044,7 @@ decodeBlockfrostTxEvaluationFailure = caseAesonObject (Left (TypeMismatch "Objec
         v' <- traverse translateOldToNew =<< decodeAeson v
         (_ /\ v') <$> decodeRedeemerPointer k
     pure $ ScriptFailures scriptFailures
+-}
 
 --------------------------------------------------------------------------------
 -- BlockfrostUtxosAtAddress / BlockfrostUtxosOfTransaction
