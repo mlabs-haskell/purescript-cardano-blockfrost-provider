@@ -21,5 +21,3 @@ format: requires-nix-shell
 	purs-tidy format-in-place ${ps-sources}
 	@echo -e '\n2. Formatting Nix sources:'
 	nixpkgs-fmt ${nix-sources}
-	@echo -e '\n3. Generating table of contents for Markdown files:'
-	doctoc README.md --github --notitle
