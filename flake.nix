@@ -7,7 +7,7 @@
   nixConfig = {
     extra-substituters = [ "https://plutonomicon.cachix.org" ];
     extra-trusted-public-keys = [ "plutonomicon.cachix.org-1:evUxtNULjCjOipxwAnYhNFeF/lyYU1FeNGaVAnm+QQw=" ];
-    bash-prompt = "\\[\\e[0m\\][\\[\\e[0;2m\\]nix-develop \\[\\e[0;1m\\]ps-cardano-provider@\\[\\033[33m\\]$(git rev-parse --abbrev-ref HEAD) \\[\\e[0;32m\\]\\w\\[\\e[0m\\]]\\[\\e[0m\\]$ \\[\\e[0m\\]";
+    bash-prompt = "\\[\\e[0m\\][\\[\\e[0;2m\\]nix-develop \\[\\e[0;1m\\]ps-cardano-blockfrost-provider@\\[\\033[33m\\]$(git rev-parse --abbrev-ref HEAD) \\[\\e[0;32m\\]\\w\\[\\e[0m\\]]\\[\\e[0m\\]$ \\[\\e[0m\\]";
   };
 
   inputs = {
@@ -36,6 +36,7 @@
 
           spagoPkgs = import ./spago-packages.nix { inherit pkgs; };
 
+          projectName = "purescript-cardano-blockfrost-provider";
           strictComp = true;
           censorCodes = [
             "ImplicitImport"
@@ -52,17 +53,17 @@
           # Intended to be used in `buildPursProject` to not recompile the entire
           # package set every time.
           buildPursDependencies =
-            {
+            { name
               # If warnings generated from project source files will trigger a build error.
               # Controls `--strict` purescript-psa flag
-              strictComp
+            , strictComp
               # Warnings from `purs` to silence during compilation, independent of `strictComp`
               # Controls `--censor-codes` purescript-psa flag
             , censorCodes
             , ...
             }:
             pkgs.stdenv.mkDerivation {
-              name = "ps-deps";
+              inherit name;
               buildInputs = [
               ];
               nativeBuildInputs = [
@@ -94,20 +95,21 @@
           # does not include any external files to its `output` (if we attempted to refer
           # to absolute paths from the project-wide `src` argument, they would be wrong)
           buildPursProject =
-            {
+            { projectName
               # If warnings generated from project source files will trigger a build error.
               # Controls `--strict` purescript-psa flag
-              strictComp
+            , strictComp
               # Warnings from `purs` to silence during compilation, independent of `strictComp`
               # Controls `--censor-codes` purescript-psa flag
             , censorCodes
             , pursDependencies ? buildPursDependencies {
                 inherit strictComp censorCodes;
+                name = projectName + "-ps-deps";
               }
             , ...
             }:
             pkgs.stdenv.mkDerivation {
-              name = "ps-project";
+              name = projectName;
               src = ./.;
               buildInputs = [
               ];
@@ -150,7 +152,7 @@
             };
         in
         {
-          packages.default = buildPursProject { inherit strictComp censorCodes; };
+          packages.default = buildPursProject { inherit projectName strictComp censorCodes; };
 
           devShells = {
             default = pkgs.mkShell {
