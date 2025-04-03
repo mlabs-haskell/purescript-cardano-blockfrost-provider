@@ -4,7 +4,12 @@ module Cardano.Blockfrost.BlockfrostProtocolParameters
 
 import Prelude
 
-import Aeson (class DecodeAeson, JsonDecodeError(TypeMismatch, AtKey, MissingValue), decodeAeson, decodeJsonString)
+import Aeson
+  ( class DecodeAeson
+  , JsonDecodeError(TypeMismatch, AtKey, MissingValue)
+  , decodeAeson
+  , decodeJsonString
+  )
 import Data.List as List
 import Foreign.Object as Object
 import Cardano.Types (Language(PlutusV3, PlutusV2, PlutusV1), UnitInterval(UnitInterval))

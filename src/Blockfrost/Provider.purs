@@ -2,7 +2,24 @@ module Cardano.Blockfrost.Provider (providerForBlockfrostBackend) where
 
 import Prelude
 
-import Cardano.Blockfrost.Service (BlockfrostServiceM, doesTxExist, evaluateTx, getChainTip, getCurrentEpoch, getDatumByHash, getEraSummaries, getOutputAddressesByTxHash, getPoolIds, getPubKeyHashDelegationsAndRewards, getScriptByHash, getTxAuxiliaryData, getUtxoByOref, getValidatorHashDelegationsAndRewards, submitTx, utxosAt)
+import Cardano.Blockfrost.Service
+  ( BlockfrostServiceM
+  , doesTxExist
+  , evaluateTx
+  , getChainTip
+  , getCurrentEpoch
+  , getDatumByHash
+  , getEraSummaries
+  , getOutputAddressesByTxHash
+  , getPoolIds
+  , getPubKeyHashDelegationsAndRewards
+  , getScriptByHash
+  , getTxAuxiliaryData
+  , getUtxoByOref
+  , getValidatorHashDelegationsAndRewards
+  , submitTx
+  , utxosAt
+  )
 import Cardano.Provider.Type (Provider)
 import Control.Monad.Error.Class (throwError)
 import Data.Either (Either(..))
