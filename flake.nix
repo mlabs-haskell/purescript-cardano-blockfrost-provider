@@ -7,7 +7,7 @@
   nixConfig = {
     extra-substituters = [ "https://plutonomicon.cachix.org" ];
     extra-trusted-public-keys = [ "plutonomicon.cachix.org-1:evUxtNULjCjOipxwAnYhNFeF/lyYU1FeNGaVAnm+QQw=" ];
-    bash-prompt = "\\[\\e[0m\\][\\[\\e[0;2m\\]nix-develop \\[\\e[0;1m\\]ps-cardano-provider@\\[\\033[33m\\]$(git rev-parse --abbrev-ref HEAD) \\[\\e[0;32m\\]\\w\\[\\e[0m\\]]\\[\\e[0m\\]$ \\[\\e[0m\\]";
+    bash-prompt = "\\[\\e[0m\\][\\[\\e[0;2m\\]nix-develop \\[\\e[0;1m\\]ps-cardano-blockfrost-provider@\\[\\033[33m\\]$(git rev-parse --abbrev-ref HEAD) \\[\\e[0;32m\\]\\w\\[\\e[0m\\]]\\[\\e[0m\\]$ \\[\\e[0m\\]";
   };
 
   inputs = {
@@ -36,6 +36,15 @@
 
           spagoPkgs = import ./spago-packages.nix { inherit pkgs; };
 
+          projectName = "purescript-cardano-blockfrost-provider";
+          strictComp = true;
+          censorCodes = [
+            "ImplicitImport"
+            "ImplicitQualifiedImport"
+            "ImplicitQualifiedImportReExport"
+            "UserDefinedWarning"
+          ];
+
           # building/testing machinery is taken from cardano-transaction-lib.
           # TODO: migrate it to a separate repo
 
@@ -44,17 +53,17 @@
           # Intended to be used in `buildPursProject` to not recompile the entire
           # package set every time.
           buildPursDependencies =
-            {
+            { name
               # If warnings generated from project source files will trigger a build error.
               # Controls `--strict` purescript-psa flag
-              strictComp ? true
+            , strictComp
               # Warnings from `purs` to silence during compilation, independent of `strictComp`
               # Controls `--censor-codes` purescript-psa flag
-            , censorCodes ? [ "UserDefinedWarning" ]
+            , censorCodes
             , ...
             }:
             pkgs.stdenv.mkDerivation {
-              name = "ps-deps";
+              inherit name;
               buildInputs = [
               ];
               nativeBuildInputs = [
@@ -86,20 +95,21 @@
           # does not include any external files to its `output` (if we attempted to refer
           # to absolute paths from the project-wide `src` argument, they would be wrong)
           buildPursProject =
-            {
+            { projectName
               # If warnings generated from project source files will trigger a build error.
               # Controls `--strict` purescript-psa flag
-              strictComp ? true
+            , strictComp
               # Warnings from `purs` to silence during compilation, independent of `strictComp`
               # Controls `--censor-codes` purescript-psa flag
-            , censorCodes ? [ "UserDefinedWarning" ]
+            , censorCodes
             , pursDependencies ? buildPursDependencies {
                 inherit strictComp censorCodes;
+                name = projectName + "-ps-deps";
               }
             , ...
             }:
             pkgs.stdenv.mkDerivation {
-              name = "ps-project";
+              name = projectName;
               src = ./.;
               buildInputs = [
               ];
@@ -140,44 +150,10 @@
                 cp -r output $out/
               '';
             };
-
-          # Runs a test written in Purescript using NodeJS.
-          runPursTest =
-            {
-              # The main Purescript module
-              testMain
-              # The entry point function in the main PureScript module
-            , psEntryPoint ? "main"
-              # Additional variables to pass to the test environment
-            , env ? { }
-              # Passed through to the `buildInputs` of the derivation. Use this to add
-              # additional packages to the test environment
-            , buildInputs ? [ ]
-            , builtProject ? buildPursProject { main = testMain; }
-            , ...
-            }: pkgs.runCommand "ps-test"
-              (
-                {
-                  src = ./.;
-                  buildInputs = [ pkgs.nodejs ];
-                } // env
-              )
-              ''
-                # Copy the purescript project files
-                cp -r ${builtProject}/* .
-
-                # The tests may depend on sources
-                cp -r $src/* .
-
-                # Call the main module and execute the entry point function
-                node --enable-source-maps -e 'import("./output/${testMain}/index.js").then(m => m.${psEntryPoint}())'
-
-                # Create output file to tell Nix we succeeded
-                touch $out
-              '';
-
         in
         {
+          packages.default = buildPursProject { inherit projectName strictComp censorCodes; };
+
           devShells = {
             default = pkgs.mkShell {
               buildInputs = with pkgs; [
@@ -197,17 +173,12 @@
             };
           };
 
-          # Example flake checks. Run with `nix flake check --keep-going`
           checks = {
-            tests = runPursTest { testMain = "Test.Main"; psEntryPoint = "main"; };
-
             formatting-check = pkgs.runCommand "formatting-check"
               {
                 nativeBuildInputs = with pkgs; [
                   easy-ps.purs-tidy
                   nixpkgs-fmt
-                  nodePackages.prettier
-                  nodePackages.eslint
                   fd
                 ];
               }
@@ -215,8 +186,6 @@
                 cd ${self}
                 purs-tidy check './src/**/*.purs' './test/**/*.purs'
                 nixpkgs-fmt --check "$(fd --no-ignore-parent -enix --exclude='spago*')"
-                prettier --log-level warn -c $(fd --no-ignore-parent -ejs -ecjs)
-                eslint --quiet $(fd --no-ignore-parent -ejs -ecjs) --parser-options 'sourceType: module'
                 touch $out
               '';
           };
@@ -225,15 +194,5 @@
       # On CI, build only on available systems, to avoid errors about systems without agents.
       # Please use aarch64-linux and x86_64-darwin sparingly as they run on smaller hardware.
       herculesCI.ciSystems = [ "x86_64-linux" ];
-
-      # Schedule task to run `nix flake update`, run CI, and open a PR with changes
-      hercules-ci.flake-update = {
-        enable = true;
-        when = {
-          dayOfWeek = "Sun";
-          hour = 12;
-          minute = 45;
-        };
-      };
     });
 }
