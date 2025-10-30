@@ -57,6 +57,7 @@ module Cardano.Blockfrost.Service
   , runBlockfrostServiceTestM
   , submitTx
   , utxosAt
+  , utxosAtWithPageLimit
   ) where
 
 import Prelude
@@ -490,9 +491,16 @@ handle404AsMempty = map (fromMaybe mempty) <<< handle404AsNothing
 --------------------------------------------------------------------------------
 
 utxosAt :: Address -> BlockfrostServiceM (Either ClientError UtxoMap)
-utxosAt address = runExceptT $
-  ExceptT (utxosAtAddressOnPage 1)
-    >>= (ExceptT <<< resolveBlockfrostUtxosAtAddress)
+utxosAt = utxosAtWithPageLimit { maxPages: Nothing }
+
+utxosAtWithPageLimit
+  :: { maxPages :: Maybe Int }
+  -> Address
+  -> BlockfrostServiceM (Either ClientError UtxoMap)
+utxosAtWithPageLimit { maxPages } address =
+  runExceptT do
+    ExceptT (utxosAtAddressOnPage 1)
+      >>= (ExceptT <<< resolveBlockfrostUtxosAtAddress)
   where
   utxosAtAddressOnPage
     :: Int -> BlockfrostServiceM (Either ClientError BlockfrostUtxosAtAddress)
@@ -502,7 +510,8 @@ utxosAt address = runExceptT $
     utxos <- ExceptT $
       blockfrostGetRequest (UtxosAtAddress address page maxNumResultsOnPage)
         <#> handle404AsMempty <<< handleBlockfrostResponse
-    case Array.length (unwrap utxos) < maxNumResultsOnPage of
+    let pageLimitReached = maybe false (page >= _) maxPages
+    case (Array.length (unwrap utxos) < maxNumResultsOnPage) || pageLimitReached of
       true -> pure utxos
       false -> append utxos <$> ExceptT (utxosAtAddressOnPage $ page + 1)
 

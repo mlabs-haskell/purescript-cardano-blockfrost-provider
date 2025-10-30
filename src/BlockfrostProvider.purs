@@ -59,6 +59,7 @@ import Cardano.Blockfrost.Service
   , runBlockfrostServiceTestM
   , submitTx
   , utxosAt
+  , utxosAtWithPageLimit
   ) as X
 import Cardano.Blockfrost.BlockfrostProtocolParameters
   ( BlockfrostProtocolParameters(BlockfrostProtocolParameters)
