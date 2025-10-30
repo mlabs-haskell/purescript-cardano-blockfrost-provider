@@ -497,23 +497,25 @@ utxosAtWithPageLimit
   :: { maxPages :: Maybe Int }
   -> Address
   -> BlockfrostServiceM (Either ClientError UtxoMap)
-utxosAtWithPageLimit { maxPages } address =
-  runExceptT do
-    ExceptT (utxosAtAddressOnPage 1)
-      >>= (ExceptT <<< resolveBlockfrostUtxosAtAddress)
-  where
-  utxosAtAddressOnPage
-    :: Int -> BlockfrostServiceM (Either ClientError BlockfrostUtxosAtAddress)
-  utxosAtAddressOnPage page = runExceptT do
-    -- Maximum number of results per page supported by Blockfrost:
-    let maxNumResultsOnPage = 100
-    utxos <- ExceptT $
-      blockfrostGetRequest (UtxosAtAddress address page maxNumResultsOnPage)
-        <#> handle404AsMempty <<< handleBlockfrostResponse
-    let pageLimitReached = maybe false (page >= _) maxPages
-    case (Array.length (unwrap utxos) < maxNumResultsOnPage) || pageLimitReached of
-      true -> pure utxos
-      false -> append utxos <$> ExceptT (utxosAtAddressOnPage $ page + 1)
+utxosAtWithPageLimit { maxPages } address
+  | maybe false (_ <= 0) maxPages = pure $ Right Map.empty
+  | otherwise =
+      runExceptT do
+        ExceptT (utxosAtAddressOnPage 1)
+          >>= (ExceptT <<< resolveBlockfrostUtxosAtAddress)
+      where
+      utxosAtAddressOnPage
+        :: Int -> BlockfrostServiceM (Either ClientError BlockfrostUtxosAtAddress)
+      utxosAtAddressOnPage page = runExceptT do
+        -- Maximum number of results per page supported by Blockfrost:
+        let maxNumResultsOnPage = 100
+        utxos <- ExceptT $
+          blockfrostGetRequest (UtxosAtAddress address page maxNumResultsOnPage)
+            <#> handle404AsMempty <<< handleBlockfrostResponse
+        let pageLimitReached = maybe false (page >= _) maxPages
+        case (Array.length (unwrap utxos) < maxNumResultsOnPage) || pageLimitReached of
+          true -> pure utxos
+          false -> append utxos <$> ExceptT (utxosAtAddressOnPage $ page + 1)
 
 getUtxoByOref
   :: TransactionInput
