@@ -32,7 +32,7 @@ import Cardano.Blockfrost.Service
   , BlockfrostRawPostResponseData
   , BlockfrostRawResponse
   , BlockfrostScriptInfo(BlockfrostScriptInfo)
-  , BlockfrostScriptLanguage(NativeScript, PlutusV1Script, PlutusV2Script)
+  , BlockfrostScriptLanguage(NativeScript, PlutusV1Script, PlutusV2Script, PlutusV3Script)
   , BlockfrostServiceM
   , BlockfrostServiceParams
   , BlockfrostSystemStart(BlockfrostSystemStart)
