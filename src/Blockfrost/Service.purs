@@ -30,7 +30,7 @@ module Cardano.Blockfrost.Service
   , BlockfrostRawPostResponseData
   , BlockfrostRawResponse
   , BlockfrostScriptInfo(BlockfrostScriptInfo)
-  , BlockfrostScriptLanguage(NativeScript, PlutusV1Script, PlutusV2Script)
+  , BlockfrostScriptLanguage(NativeScript, PlutusV1Script, PlutusV2Script, PlutusV3Script)
   , BlockfrostServiceM
   , BlockfrostServiceParams
   , BlockfrostSystemStart(BlockfrostSystemStart)
@@ -557,6 +557,9 @@ getScriptByHash scriptHash = runExceptT $ runMaybeT do
     PlutusV2Script ->
       PlutusScriptRef <<< PlutusScript.plutusV2Script <$>
         MaybeT (ExceptT getPlutusScriptCborByHash)
+    PlutusV3Script ->
+      PlutusScriptRef <<< PlutusScript.plutusV3Script <$>
+        MaybeT (ExceptT getPlutusScriptCborByHash)
   where
   getNativeScriptByHash
     :: BlockfrostServiceM (Either ClientError (Maybe NativeScript))
@@ -1053,7 +1056,7 @@ resolveBlockfrostTxOutput
 -- BlockfrostScriptLanguage
 --------------------------------------------------------------------------------
 
-data BlockfrostScriptLanguage = NativeScript | PlutusV1Script | PlutusV2Script
+data BlockfrostScriptLanguage = NativeScript | PlutusV1Script | PlutusV2Script | PlutusV3Script
 
 derive instance Generic BlockfrostScriptLanguage _
 derive instance Eq BlockfrostScriptLanguage
@@ -1066,9 +1069,10 @@ instance DecodeAeson BlockfrostScriptLanguage where
     "timelock" -> pure NativeScript
     "plutusV1" -> pure PlutusV1Script
     "plutusV2" -> pure PlutusV2Script
+    "plutusV3" -> pure PlutusV3Script
     invalid ->
       Left $ TypeMismatch $
-        "language: expected 'native' or 'plutusV{1|2}', got: " <> invalid
+        "language: expected 'native' or 'plutusV{1|2|3}', got: " <> invalid
 
 --------------------------------------------------------------------------------
 -- BlockfrostScriptInfo
