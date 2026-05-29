@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and we follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# Unreleased
+
+## Changed
+
+- Updated Plutus cost model handling for compatibility with the van Rossem hard fork ([#6](https://github.com/mlabs-haskell/purescript-cardano-blockfrost-provider/pull/6))
+
 # v2.2.0
 
 ## Added
