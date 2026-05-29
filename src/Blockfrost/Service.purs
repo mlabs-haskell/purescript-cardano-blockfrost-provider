@@ -30,7 +30,7 @@ module Cardano.Blockfrost.Service
   , BlockfrostRawPostResponseData
   , BlockfrostRawResponse
   , BlockfrostScriptInfo(BlockfrostScriptInfo)
-  , BlockfrostScriptLanguage(NativeScript, PlutusV1Script, PlutusV2Script)
+  , BlockfrostScriptLanguage(NativeScript, PlutusV1Script, PlutusV2Script, PlutusV3Script)
   , BlockfrostServiceM
   , BlockfrostServiceParams
   , BlockfrostSystemStart(BlockfrostSystemStart)
@@ -57,6 +57,7 @@ module Cardano.Blockfrost.Service
   , runBlockfrostServiceTestM
   , submitTx
   , utxosAt
+  , utxosAtWithPageLimit
   ) where
 
 import Prelude
@@ -490,21 +491,31 @@ handle404AsMempty = map (fromMaybe mempty) <<< handle404AsNothing
 --------------------------------------------------------------------------------
 
 utxosAt :: Address -> BlockfrostServiceM (Either ClientError UtxoMap)
-utxosAt address = runExceptT $
-  ExceptT (utxosAtAddressOnPage 1)
-    >>= (ExceptT <<< resolveBlockfrostUtxosAtAddress)
-  where
-  utxosAtAddressOnPage
-    :: Int -> BlockfrostServiceM (Either ClientError BlockfrostUtxosAtAddress)
-  utxosAtAddressOnPage page = runExceptT do
-    -- Maximum number of results per page supported by Blockfrost:
-    let maxNumResultsOnPage = 100
-    utxos <- ExceptT $
-      blockfrostGetRequest (UtxosAtAddress address page maxNumResultsOnPage)
-        <#> handle404AsMempty <<< handleBlockfrostResponse
-    case Array.length (unwrap utxos) < maxNumResultsOnPage of
-      true -> pure utxos
-      false -> append utxos <$> ExceptT (utxosAtAddressOnPage $ page + 1)
+utxosAt = utxosAtWithPageLimit { maxPages: Nothing }
+
+utxosAtWithPageLimit
+  :: { maxPages :: Maybe Int }
+  -> Address
+  -> BlockfrostServiceM (Either ClientError UtxoMap)
+utxosAtWithPageLimit { maxPages } address
+  | maybe false (_ <= 0) maxPages = pure $ Right Map.empty
+  | otherwise =
+      runExceptT do
+        ExceptT (utxosAtAddressOnPage 1)
+          >>= (ExceptT <<< resolveBlockfrostUtxosAtAddress)
+      where
+      utxosAtAddressOnPage
+        :: Int -> BlockfrostServiceM (Either ClientError BlockfrostUtxosAtAddress)
+      utxosAtAddressOnPage page = runExceptT do
+        -- Maximum number of results per page supported by Blockfrost:
+        let maxNumResultsOnPage = 100
+        utxos <- ExceptT $
+          blockfrostGetRequest (UtxosAtAddress address page maxNumResultsOnPage)
+            <#> handle404AsMempty <<< handleBlockfrostResponse
+        let pageLimitReached = maybe false (page >= _) maxPages
+        case (Array.length (unwrap utxos) < maxNumResultsOnPage) || pageLimitReached of
+          true -> pure utxos
+          false -> append utxos <$> ExceptT (utxosAtAddressOnPage $ page + 1)
 
 getUtxoByOref
   :: TransactionInput
@@ -556,6 +567,9 @@ getScriptByHash scriptHash = runExceptT $ runMaybeT do
         MaybeT (ExceptT getPlutusScriptCborByHash)
     PlutusV2Script ->
       PlutusScriptRef <<< PlutusScript.plutusV2Script <$>
+        MaybeT (ExceptT getPlutusScriptCborByHash)
+    PlutusV3Script ->
+      PlutusScriptRef <<< PlutusScript.plutusV3Script <$>
         MaybeT (ExceptT getPlutusScriptCborByHash)
   where
   getNativeScriptByHash
@@ -1053,7 +1067,11 @@ resolveBlockfrostTxOutput
 -- BlockfrostScriptLanguage
 --------------------------------------------------------------------------------
 
-data BlockfrostScriptLanguage = NativeScript | PlutusV1Script | PlutusV2Script
+data BlockfrostScriptLanguage
+  = NativeScript
+  | PlutusV1Script
+  | PlutusV2Script
+  | PlutusV3Script
 
 derive instance Generic BlockfrostScriptLanguage _
 derive instance Eq BlockfrostScriptLanguage
@@ -1066,9 +1084,10 @@ instance DecodeAeson BlockfrostScriptLanguage where
     "timelock" -> pure NativeScript
     "plutusV1" -> pure PlutusV1Script
     "plutusV2" -> pure PlutusV2Script
+    "plutusV3" -> pure PlutusV3Script
     invalid ->
       Left $ TypeMismatch $
-        "language: expected 'native' or 'plutusV{1|2}', got: " <> invalid
+        "language: expected 'native' or 'plutusV{1|2|3}', got: " <> invalid
 
 --------------------------------------------------------------------------------
 -- BlockfrostScriptInfo
