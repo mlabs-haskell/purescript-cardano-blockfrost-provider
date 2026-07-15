@@ -10,7 +10,6 @@
   , "cardano-provider"
   , "cardano-data-lite"
   , "cardano-types"
-  , "control"
   , "datetime"
   , "effect"
   , "either"

@@ -63,5 +63,8 @@ import Cardano.Blockfrost.Service
   ) as X
 import Cardano.Blockfrost.BlockfrostProtocolParameters
   ( BlockfrostProtocolParameters(BlockfrostProtocolParameters)
+  , BlockfrostProtocolParametersRaw
+  , FiniteBigNumber(FiniteBigNumber)
+  , Stringed(Stringed)
   ) as X
 import Cardano.Blockfrost.Provider (providerForBlockfrostBackend) as X
