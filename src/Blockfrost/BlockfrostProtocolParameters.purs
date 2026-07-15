@@ -41,14 +41,24 @@ import JS.BigInt (fromString) as BigInt
 -- | `Stringed a` decodes an `a` that was encoded as a `String`
 newtype Stringed a = Stringed a
 
+derive instance Generic (Stringed a) _
+
 derive instance Newtype (Stringed a) _
+
+instance Show a => Show (Stringed a) where
+  show = genericShow
 
 instance DecodeAeson a => DecodeAeson (Stringed a) where
   decodeAeson = decodeAeson >=> decodeJsonString >=> Stringed >>> pure
 
 newtype FiniteBigNumber = FiniteBigNumber BigNumber
 
+derive instance Generic FiniteBigNumber _
+
 derive instance Newtype FiniteBigNumber _
+
+instance Show FiniteBigNumber where
+  show = genericShow
 
 instance DecodeAeson FiniteBigNumber where
   decodeAeson aeson = do
