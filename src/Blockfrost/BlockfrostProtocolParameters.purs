@@ -9,9 +9,14 @@ import Prelude
 
 import Aeson
   ( class DecodeAeson
+  , class EncodeAeson
   , JsonDecodeError(TypeMismatch, AtKey, MissingValue)
   , decodeAeson
   , decodeJsonString
+  , encodeAeson
+  , finiteNumber
+  , stringifyAeson
+  , unFinite
   )
 import Cardano.Types (Language(PlutusV3, PlutusV2, PlutusV1), UnitInterval(UnitInterval))
 import Cardano.Types.BigNum (BigNum)
@@ -28,7 +33,7 @@ import Data.BigNumber as BigNumber
 import Data.Either (Either(Left), hush, note)
 import Data.Generic.Rep (class Generic)
 import Data.Map (fromFoldable) as Map
-import Data.Maybe (Maybe, maybe)
+import Data.Maybe (Maybe, fromJust, maybe)
 import Data.Newtype (class Newtype, unwrap, wrap)
 import Data.Number (infinity)
 import Data.Show.Generic (genericShow)
@@ -37,6 +42,7 @@ import Data.UInt (UInt)
 import Foreign.Object (Object)
 import Foreign.Object as Object
 import JS.BigInt (fromString) as BigInt
+import Partial.Unsafe (unsafePartial)
 
 -- | `Stringed a` decodes an `a` that was encoded as a `String`
 newtype Stringed a = Stringed a
@@ -51,6 +57,15 @@ instance Show a => Show (Stringed a) where
 instance DecodeAeson a => DecodeAeson (Stringed a) where
   decodeAeson = decodeAeson >=> decodeJsonString >=> Stringed >>> pure
 
+instance EncodeAeson a => EncodeAeson (Stringed a) where
+  encodeAeson =
+    encodeAeson
+      <<< stringifyAeson
+      <<< encodeAeson
+      <<< unwrap
+
+-- TODO: Ensure FiniteBigNumber handling is sensible
+
 newtype FiniteBigNumber = FiniteBigNumber BigNumber
 
 derive instance Generic FiniteBigNumber _
@@ -61,11 +76,17 @@ instance Show FiniteBigNumber where
   show = genericShow
 
 instance DecodeAeson FiniteBigNumber where
-  decodeAeson aeson = do
-    number <- decodeAeson aeson
-    map FiniteBigNumber $ note (TypeMismatch "BigNumber") $ hush
-      $ BigNumber.parseBigNumber
-      $ show (number :: Number)
+  decodeAeson =
+    map (FiniteBigNumber <<< BigNumber.fromNumber <<< unFinite)
+      <<< decodeAeson
+
+instance EncodeAeson FiniteBigNumber where
+  encodeAeson =
+    encodeAeson
+      <<< unsafePartial fromJust
+      <<< finiteNumber
+      <<< BigNumber.toNumber
+      <<< unwrap
 
 type BlockfrostProtocolParametersRaw =
   { epoch :: Epoch
