@@ -30,7 +30,7 @@ import Cardano.Types.ProtocolParameters (ProtocolParameters(ProtocolParameters))
 import Cardano.Types.Rational (Rational, reduce)
 import Data.BigNumber (BigNumber, toFraction)
 import Data.BigNumber as BigNumber
-import Data.Either (Either(Left), hush, note)
+import Data.Either (Either(Left), note)
 import Data.Generic.Rep (class Generic)
 import Data.Map (fromFoldable) as Map
 import Data.Maybe (Maybe, fromJust, maybe)

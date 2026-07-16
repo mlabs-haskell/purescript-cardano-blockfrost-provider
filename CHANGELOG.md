@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and we follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# v2.3.0
+
+## Added
+
+- Exported `BlockfrostProtocolParametersRaw`, `FiniteBigNumber`, and `Stringed` ([#7](https://github.com/mlabs-haskell/purescript-cardano-blockfrost-provider/pull/7))
+  - Added missing fields to `BlockfrostProtocolParametersRaw` to ensure full alignment with the [Blockfrost reference](https://docs.blockfrost.io/#tag/cardano--epochs/GET/epochs/latest/parameters).
+
 # v2.2.0
 
 ## Added
