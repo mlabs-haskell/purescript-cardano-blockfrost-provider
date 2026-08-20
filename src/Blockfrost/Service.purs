@@ -22,6 +22,7 @@ module Cardano.Blockfrost.Service
       , PoolIds
       , PoolParameters
       , DelegationsAndRewards
+      , Proposal
       )
   , BlockfrostStakeCredential(BlockfrostStakeCredential)
   , BlockfrostEraSummaries(BlockfrostEraSummaries)
@@ -44,6 +45,7 @@ module Cardano.Blockfrost.Service
   , getEraSummaries
   , getOutputAddressesByTxHash
   , getPoolIds
+  , getProposalById
   , getProtocolParameters
   , getPubKeyHashDelegationsAndRewards
   , getScriptByHash
@@ -90,6 +92,18 @@ import Cardano.Blockfrost.BlockfrostBackend (BlockfrostBackend)
 import Cardano.Blockfrost.BlockfrostProtocolParameters (BlockfrostProtocolParameters)
 import Cardano.Blockfrost.Helpers (decodeAssetClass)
 import Cardano.Data.Lite (toBytes)
+import Cardano.Provider
+  ( Proposal
+  , ProposalType
+      ( TriggerHardFork
+      , NewCommittee
+      , NewConstitution
+      , Info
+      , NoConfidence
+      , ChangeProtocolParameters
+      , TreasuryWithdrawal
+      )
+  )
 import Cardano.Provider.Affjax (request) as Affjax
 import Cardano.Provider.Error
   ( ClientError
@@ -119,6 +133,7 @@ import Cardano.Types
   , AuxiliaryData
   , DataHash
   , GeneralTransactionMetadata(GeneralTransactionMetadata)
+  , GovernanceActionId(GovernanceActionId)
   , PlutusData
   , PoolPubKeyHash
   , RawBytes
@@ -188,6 +203,7 @@ import Data.Time.Duration (Seconds(Seconds), convertDuration)
 import Data.Traversable (for, for_, traverse)
 import Data.Tuple (Tuple(Tuple), fst, snd)
 import Data.Tuple.Nested (type (/\), (/\))
+import Data.UInt (toString) as UInt
 import Effect.Aff (Aff)
 import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
@@ -303,6 +319,8 @@ data BlockfrostEndpoint
   | PoolParameters PoolPubKeyHash
   -- /accounts/{stake_address}
   | DelegationsAndRewards BlockfrostStakeCredential
+  -- /governance/proposals/{tx_hash}/{cert_index}
+  | Proposal GovernanceActionId
 
 derive instance Generic BlockfrostEndpoint _
 derive instance Eq BlockfrostEndpoint
@@ -353,6 +371,11 @@ realizeEndpoint endpoint =
       "/pool/" <> PoolPubKeyHash.toBech32 poolPubKeyHash
     DelegationsAndRewards credential ->
       "/accounts/" <> blockfrostStakeCredentialToBech32 credential
+    Proposal (GovernanceActionId { transactionId, index }) ->
+      "/governance/proposals/"
+        <> byteArrayToHex (toBytes $ unwrap transactionId)
+        <> "/"
+        <> UInt.toString index
 
 blockfrostGetRequest
   :: BlockfrostEndpoint
@@ -471,6 +494,7 @@ handleBlockfrostResponse (Right { status: Affjax.StatusCode statusCode, body })
       body # lmap (ClientDecodeJsonError body)
         <<< (decodeAeson <=< parseJsonStringToAeson)
 
+-- TODO: deprecate?
 handle404AsNothing
   :: forall (a :: Type)
    . Either ClientError (Maybe a)
@@ -479,12 +503,81 @@ handle404AsNothing (Left (ClientHttpResponseError (Affjax.StatusCode 404) _)) =
   Right Nothing
 handle404AsNothing x = x
 
+handle404AsNothing'
+  :: forall (a :: Type)
+   . Either ClientError a
+  -> Either ClientError (Maybe a)
+handle404AsNothing' (Left (ClientHttpResponseError (Affjax.StatusCode 404) _)) =
+  Right Nothing
+handle404AsNothing' x = Just <$> x
+
 handle404AsMempty
   :: forall (a :: Type)
    . Monoid a
   => Either ClientError (Maybe a)
   -> Either ClientError a
 handle404AsMempty = map (fromMaybe mempty) <<< handle404AsNothing
+
+--------------------------------------------------------------------------------
+-- Governance
+--------------------------------------------------------------------------------
+
+proposalTypeFromBlockfrostString :: String -> Maybe ProposalType
+proposalTypeFromBlockfrostString =
+  case _ of
+    "hard_fork_initiation" ->
+      Just TriggerHardFork
+    "new_committee" ->
+      Just NewCommittee
+    "new_constitution" ->
+      Just NewConstitution
+    "info_action" ->
+      Just Info
+    "no_confidence" ->
+      Just NoConfidence
+    "parameter_change" ->
+      Just ChangeProtocolParameters
+    "treasury_withdrawals" ->
+      Just TreasuryWithdrawal
+    _ -> Nothing
+
+newtype BlockfrostProposal = BlockfrostProposal Proposal
+
+derive instance Generic BlockfrostProposal _
+derive instance Newtype BlockfrostProposal _
+
+instance Show BlockfrostProposal where
+  show = genericShow
+
+instance DecodeAeson BlockfrostProposal where
+  decodeAeson =
+    caseAesonObject (Left (TypeMismatch "Object")) \obj -> do
+      proposalType <- do
+        proposalTypeRaw <- getField obj "governance_type"
+        note (TypeMismatch "Expected string corresponding to ProposalType constr") $
+          proposalTypeFromBlockfrostString proposalTypeRaw
+      deposit <- do
+        depositRaw <- getField obj "deposit"
+        Coin <$> note (TypeMismatch "Expected string repr of BigNum")
+          (BigNum.fromString depositRaw)
+      returnAddress <- do
+        returnAddressBech32 <- getField obj "return_address"
+        note (TypeMismatch "Expected Bech32-encoded reward address") $
+          RewardAddress.fromBech32 returnAddressBech32
+      pure $ wrap
+        { proposalType
+        , deposit
+        , returnAddress
+        }
+
+getProposalById
+  :: GovernanceActionId
+  -> BlockfrostServiceM (Either ClientError (Maybe Proposal))
+getProposalById proposalRef =
+  blockfrostGetRequest (Proposal proposalRef) <#> \resp ->
+    handle404AsNothing' $
+      (unwrap :: BlockfrostProposal -> Proposal) <$>
+        handleBlockfrostResponse resp
 
 --------------------------------------------------------------------------------
 -- Get utxos at address / by output reference

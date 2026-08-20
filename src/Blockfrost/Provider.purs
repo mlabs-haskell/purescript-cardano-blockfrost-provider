@@ -12,6 +12,7 @@ import Cardano.Blockfrost.Service
   , getEraSummaries
   , getOutputAddressesByTxHash
   , getPoolIds
+  , getProposalById
   , getPubKeyHashDelegationsAndRewards
   , getScriptByHash
   , getTxAuxiliaryData
@@ -22,7 +23,7 @@ import Cardano.Blockfrost.Service
   )
 import Cardano.Provider.Type (Provider)
 import Control.Monad.Error.Class (throwError)
-import Data.Either (Either(..))
+import Data.Either (Either(Left, Right))
 import Data.Newtype (wrap)
 import Effect.Aff (Aff)
 import Effect.Exception (error)
@@ -58,4 +59,9 @@ providerForBlockfrostBackend runBlockfrostServiceM' =
         ( getValidatorHashDelegationsAndRewards networkId
             (wrap stakeValidatorHash)
         )
+  , getProposalById: runBlockfrostServiceM' <<< getProposalById
+  , getVotesOnProposal: \_ ->
+      throwError $ error "Blockfrost provider: getVotesOnProposal not implemented"
+  , getRegisteredDrepInfo: \_ ->
+      throwError $ error "Blockfrost provider: getRegisteredDrepInfo not implemented"
   }
