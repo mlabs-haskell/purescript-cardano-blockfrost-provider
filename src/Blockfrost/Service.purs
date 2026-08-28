@@ -23,6 +23,7 @@ module Cardano.Blockfrost.Service
       , PoolParameters
       , DelegationsAndRewards
       , Proposal
+      , ProposalVotes
       )
   , BlockfrostStakeCredential(BlockfrostStakeCredential)
   , BlockfrostEraSummaries(BlockfrostEraSummaries)
@@ -55,6 +56,8 @@ module Cardano.Blockfrost.Service
   , getTxMetadata
   , getUtxoByOref
   , getValidatorHashDelegationsAndRewards
+  , getVotesOnProposal
+  , getVotesOnProposalWithPageLimit
   , runBlockfrostServiceM
   , runBlockfrostServiceTestM
   , submitTx
@@ -103,6 +106,7 @@ import Cardano.Provider
       , ChangeProtocolParameters
       , TreasuryWithdrawal
       )
+  , VoteOnProposal
   )
 import Cardano.Provider.Affjax (request) as Affjax
 import Cardano.Provider.Error
@@ -145,6 +149,8 @@ import Cardano.Types
   , TransactionOutput(TransactionOutput)
   , UtxoMap
   , Value
+  , Vote(VoteNo, VoteYes, VoteAbstain)
+  , Voter(Cc, Drep, Spo)
   )
 import Cardano.Types.Address (Address)
 import Cardano.Types.Address as Address
@@ -156,8 +162,10 @@ import Cardano.Types.Chain (Tip(Tip, TipAtGenesis))
 import Cardano.Types.Coin (Coin(Coin))
 import Cardano.Types.Credential (Credential(PubKeyHashCredential, ScriptHashCredential))
 import Cardano.Types.DelegationsAndRewards (DelegationsAndRewards)
+import Cardano.Types.Ed25519KeyHash (fromBech32) as Ed25519KeyHash
 import Cardano.Types.EraSummaries (EraSummaries, EraSummary, EraSummaryParameters)
 import Cardano.Types.GeneralTransactionMetadata as GeneralTransactionMetadata
+import Cardano.Types.GovId (GovId(GovCredential), GovIdType(DRep), fromBech32) as GovId
 import Cardano.Types.NativeScript
   ( NativeScript(ScriptAll, ScriptAny, ScriptNOfK, ScriptPubkey, TimelockExpiry, TimelockStart)
   )
@@ -183,7 +191,7 @@ import Control.Parallel (parTraverse)
 import Data.Array (catMaybes)
 import Data.Array (find, length) as Array
 import Data.Bifunctor (lmap)
-import Data.ByteArray (ByteArray, byteArrayToHex)
+import Data.ByteArray (ByteArray, byteArrayToHex, hexToByteArray)
 import Data.DateTime.Instant (instant, toDateTime)
 import Data.Either (Either(Left, Right), either, hush, note)
 import Data.Generic.Rep (class Generic)
@@ -309,8 +317,8 @@ data BlockfrostEndpoint
   | Transaction TransactionHash
   -- /txs/{hash}/metadata
   | TransactionMetadata TransactionHash
-  -- /addresses/{address}/utxos?page={page}&count={count}
-  | UtxosAtAddress Address Int Int
+  -- /addresses/{address}/utxos?page={page}&count={count}&order=asc
+  | UtxosAtAddress { addr :: Address, page :: Int, count :: Int }
   -- /txs/{hash}/utxos
   | UtxosOfTransaction TransactionHash
   -- /pools?page={page}&count={count}&order=asc
@@ -321,6 +329,8 @@ data BlockfrostEndpoint
   | DelegationsAndRewards BlockfrostStakeCredential
   -- /governance/proposals/{tx_hash}/{cert_index}
   | Proposal GovernanceActionId
+  -- /governance/proposals/{tx_hash}/{cert_index}/votes?page={page}&count={count}&order=asc
+  | ProposalVotes { proposalRef :: GovernanceActionId, page :: Int, count :: Int }
 
 derive instance Generic BlockfrostEndpoint _
 derive instance Eq BlockfrostEndpoint
@@ -360,8 +370,8 @@ realizeEndpoint endpoint =
       "/txs/" <> byteArrayToHex (toBytes $ unwrap txHash)
     TransactionMetadata txHash ->
       "/txs/" <> byteArrayToHex (toBytes $ unwrap txHash) <> "/metadata/cbor"
-    UtxosAtAddress address page count ->
-      "/addresses/" <> Address.toBech32 address <> "/utxos?page=" <> show page
+    UtxosAtAddress { addr, page, count } ->
+      "/addresses/" <> Address.toBech32 addr <> "/utxos?page=" <> show page
         <> ("&count=" <> show count)
     UtxosOfTransaction txHash ->
       "/txs/" <> byteArrayToHex (toBytes $ unwrap txHash) <> "/utxos"
@@ -376,6 +386,16 @@ realizeEndpoint endpoint =
         <> byteArrayToHex (toBytes $ unwrap transactionId)
         <> "/"
         <> UInt.toString index
+    ProposalVotes { proposalRef: GovernanceActionId { transactionId, index }, page, count } ->
+      "/governance/proposals/"
+        <> byteArrayToHex (toBytes $ unwrap transactionId)
+        <> "/"
+        <> UInt.toString index
+        <> "/votes?page="
+        <> show page
+        <> "&count="
+        <> show count
+        <> "&order=asc"
 
 blockfrostGetRequest
   :: BlockfrostEndpoint
@@ -522,6 +542,8 @@ handle404AsMempty = map (fromMaybe mempty) <<< handle404AsNothing
 -- Governance
 --------------------------------------------------------------------------------
 
+-- getProposalById
+
 proposalTypeFromBlockfrostString :: String -> Maybe ProposalType
 proposalTypeFromBlockfrostString =
   case _ of
@@ -579,6 +601,87 @@ getProposalById proposalRef =
       (unwrap :: BlockfrostProposal -> Proposal) <$>
         handleBlockfrostResponse resp
 
+-- getVotesOnProposal
+
+voteFromBlockfrostString :: String -> Maybe Vote
+voteFromBlockfrostString =
+  case _ of
+    "no" -> Just VoteNo
+    "yes" -> Just VoteYes
+    "abstain" -> Just VoteAbstain
+    _ -> Nothing
+
+voterFromBlockfrostFields :: { voter_role :: String, voter :: String } -> Maybe Voter
+voterFromBlockfrostFields { voter_role: role, voter } =
+  case role of
+    "constitutional_committee" ->
+      -- FIXME: Report upstream that Blockfrost returns an ambiguous cred for cc
+      Cc <<< PubKeyHashCredential <$> (decodeCbor <<< wrap =<< hexToByteArray voter)
+    "drep" -> do
+      govId <- GovId.fromBech32 voter
+      case govId of
+        GovId.GovCredential { govIdType, cred } | govIdType == GovId.DRep ->
+          Just $ Drep cred
+        _ ->
+          Nothing
+    "spo" ->
+      Spo <$> Ed25519KeyHash.fromBech32 voter
+    _ ->
+      Nothing
+
+newtype BlockfrostVoteOnProposal = BlockfrostVoteOnProposal VoteOnProposal
+
+derive instance Generic BlockfrostVoteOnProposal _
+derive instance Newtype BlockfrostVoteOnProposal _
+
+instance Show BlockfrostVoteOnProposal where
+  show = genericShow
+
+instance DecodeAeson BlockfrostVoteOnProposal where
+  decodeAeson aeson = do
+    ({ voter_role, voter, vote } :: { voter_role :: String, voter :: String, vote :: String }) <-
+      decodeAeson aeson
+    vote' <-
+      note (TypeMismatch "Expected string repr of Vote") $
+        voteFromBlockfrostString vote
+    voter' <-
+      note (TypeMismatch "Could not build Voter from voter and voter_role") $
+        voterFromBlockfrostFields { voter_role, voter }
+    pure $ wrap
+      { voter: voter'
+      , vote: vote'
+      }
+
+getVotesOnProposal
+  :: GovernanceActionId
+  -> BlockfrostServiceM (Either ClientError (Array VoteOnProposal))
+getVotesOnProposal = getVotesOnProposalWithPageLimit { maxPages: Nothing }
+
+getVotesOnProposalWithPageLimit
+  :: { maxPages :: Maybe Int }
+  -> GovernanceActionId
+  -> BlockfrostServiceM (Either ClientError (Array VoteOnProposal))
+getVotesOnProposalWithPageLimit { maxPages } proposalRef
+  | maybe false (_ <= 0) maxPages = pure $ Right mempty
+  | otherwise = worker 1
+      where
+      worker
+        :: Int
+        -> BlockfrostServiceM (Either ClientError (Array VoteOnProposal))
+      worker page = runExceptT do
+        -- Maximum number of results per page supported by Blockfrost:
+        let maxNumResultsOnPage = 100
+        (votes :: Array BlockfrostVoteOnProposal) <- ExceptT $
+          blockfrostGetRequest
+            (ProposalVotes { proposalRef, page, count: maxNumResultsOnPage })
+            <#> handle404AsMempty <<< handleBlockfrostResponse
+        let
+          votesUnwrapped = unwrap <$> votes
+          pageLimitReached = maybe false (page >= _) maxPages
+        case (Array.length votes < maxNumResultsOnPage) || pageLimitReached of
+          true -> pure votesUnwrapped
+          false -> append votesUnwrapped <$> ExceptT (worker $ page + 1)
+
 --------------------------------------------------------------------------------
 -- Get utxos at address / by output reference
 --------------------------------------------------------------------------------
@@ -590,7 +693,7 @@ utxosAtWithPageLimit
   :: { maxPages :: Maybe Int }
   -> Address
   -> BlockfrostServiceM (Either ClientError UtxoMap)
-utxosAtWithPageLimit { maxPages } address
+utxosAtWithPageLimit { maxPages } addr
   | maybe false (_ <= 0) maxPages = pure $ Right Map.empty
   | otherwise =
       runExceptT do
@@ -603,7 +706,7 @@ utxosAtWithPageLimit { maxPages } address
         -- Maximum number of results per page supported by Blockfrost:
         let maxNumResultsOnPage = 100
         utxos <- ExceptT $
-          blockfrostGetRequest (UtxosAtAddress address page maxNumResultsOnPage)
+          blockfrostGetRequest (UtxosAtAddress { addr, page, count: maxNumResultsOnPage })
             <#> handle404AsMempty <<< handleBlockfrostResponse
         let pageLimitReached = maybe false (page >= _) maxPages
         case (Array.length (unwrap utxos) < maxNumResultsOnPage) || pageLimitReached of

@@ -18,6 +18,7 @@ import Cardano.Blockfrost.Service
   , getTxAuxiliaryData
   , getUtxoByOref
   , getValidatorHashDelegationsAndRewards
+  , getVotesOnProposal
   , submitTx
   , utxosAt
   )
@@ -60,8 +61,7 @@ providerForBlockfrostBackend runBlockfrostServiceM' =
             (wrap stakeValidatorHash)
         )
   , getProposalById: runBlockfrostServiceM' <<< getProposalById
-  , getVotesOnProposal: \_ ->
-      throwError $ error "Blockfrost provider: getVotesOnProposal not implemented"
+  , getVotesOnProposal: runBlockfrostServiceM' <<< getVotesOnProposal
   , getRegisteredDrepInfo: \_ ->
       throwError $ error "Blockfrost provider: getRegisteredDrepInfo not implemented"
   }

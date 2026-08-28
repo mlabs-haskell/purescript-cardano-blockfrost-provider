@@ -37,11 +37,13 @@ main =
       proposalRef =
         wrap
           { transactionId: unsafePartial fromJust $ decodeCbor <<< wrap =<< hexToByteArray
-              "0ecc74fe26532cec1ab9a299f082afc436afc888ca2dc0fc6acda431c52dc60d"
+              "c9a88e24e627f717e2d0c81c09fedc1208d229f633f467c5dd2337ba123b4e41"
           , index: UInt.fromInt 0
           }
     proposal <- provider.getProposalById proposalRef
     liftEffect $ log $ "Proposal: " <> show proposal
+    votes <- provider.getVotesOnProposal proposalRef
+    liftEffect $ log $ "Votes: " <> show votes
 
 runner :: forall (a :: Type). String -> BlockfrostServiceM a -> Aff a
 runner blockfrostApiKey action =
