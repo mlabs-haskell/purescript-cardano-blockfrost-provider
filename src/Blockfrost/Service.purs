@@ -634,7 +634,10 @@ voterFromBlockfrostFields :: { voter_role :: String, voter :: String } -> Maybe 
 voterFromBlockfrostFields { voter_role: role, voter } =
   case role of
     "constitutional_committee" ->
-      -- FIXME: Report upstream that Blockfrost returns an ambiguous cred for cc
+      -- FIXME: For CC voters Blockfrost returns a bare hex hash in the `voter`
+      -- field with no discriminator between a key hash and a script hash, so
+      -- script-based CC members are misclassified as `PubKeyHashCredential`
+      -- here. Tracking upstream: https://github.com/blockfrost/openapi/issues/465
       Cc <<< PubKeyHashCredential <$> (decodeCbor <<< wrap =<< hexToByteArray voter)
     "drep" -> do
       govId <- GovId.fromBech32 voter
@@ -671,6 +674,11 @@ instance DecodeAeson BlockfrostVoteOnProposal where
       , vote: vote'
       }
 
+-- FIXME: Blockfrost returns the full vote-tx history, including votes no
+-- longer counted in the ledger (superseded by a later vote, or cast by a
+-- DRep that later deregistered). Ogmios' `queryLedgerState/governanceProposals`
+-- returns only currently-counted votes, so the two providers can diverge
+-- significantly. Tracking upstream: https://github.com/blockfrost/openapi/issues/466
 getVotesOnProposal
   :: GovernanceActionId
   -> BlockfrostServiceM (Either ClientError (Array VoteOnProposal))

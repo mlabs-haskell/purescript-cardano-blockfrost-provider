@@ -6,8 +6,8 @@ import Cardano.Blockfrost
 import Prelude
 
 import Cardano.AsCbor (decodeCbor)
-import Cardano.Types (GovId(GovCredential))
-import Cardano.Types.GovId (fromBech32) as GovId
+import Cardano.Types (GovId(GovCredential, GovAction))
+import Cardano.Types.GovId (fromBech32, toBech32) as GovId
 import Control.Monad.Error.Class (liftMaybe, throwError)
 import Control.Monad.Logger.Trans (runLoggerT)
 import Control.Monad.Reader (runReaderT)
@@ -42,6 +42,7 @@ main =
               "78a9aafe2e4e14828efa8cd5202fec08c996a9a00c7d56b317b6a95a80510db3"
           , index: UInt.fromInt 0
           }
+    liftEffect $ log $ "Proposal's GovId: " <> GovId.toBech32 (GovAction proposalRef)
     proposal <- provider.getProposalById proposalRef
     liftEffect $ log $ "Proposal: " <> show proposal
     votes <- provider.getVotesOnProposal proposalRef
