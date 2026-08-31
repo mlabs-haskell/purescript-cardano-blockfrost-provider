@@ -6,7 +6,9 @@ import Cardano.Blockfrost
 import Prelude
 
 import Cardano.AsCbor (decodeCbor)
-import Control.Monad.Error.Class (liftMaybe)
+import Cardano.Types (GovId(GovCredential))
+import Cardano.Types.GovId (fromBech32) as GovId
+import Control.Monad.Error.Class (liftMaybe, throwError)
 import Control.Monad.Logger.Trans (runLoggerT)
 import Control.Monad.Reader (runReaderT)
 import Data.ByteArray (hexToByteArray)
@@ -37,13 +39,21 @@ main =
       proposalRef =
         wrap
           { transactionId: unsafePartial fromJust $ decodeCbor <<< wrap =<< hexToByteArray
-              "c9a88e24e627f717e2d0c81c09fedc1208d229f633f467c5dd2337ba123b4e41"
+              "78a9aafe2e4e14828efa8cd5202fec08c996a9a00c7d56b317b6a95a80510db3"
           , index: UInt.fromInt 0
           }
     proposal <- provider.getProposalById proposalRef
     liftEffect $ log $ "Proposal: " <> show proposal
     votes <- provider.getVotesOnProposal proposalRef
     liftEffect $ log $ "Votes: " <> show votes
+    govId <-
+      liftMaybe (error "Could not decode GovId from Bech32 string") $
+        GovId.fromBech32 "drep1ytwmwvtd0a8lr45ssner2tjxzv5y8q03w3606yeald9mdmgmwecja"
+    case govId of
+      GovCredential { cred: drepCred } -> do
+        drepInfo <- provider.getRegisteredDrepInfo drepCred
+        liftEffect $ log $ "DRep info: " <> show drepInfo
+      _ -> throwError $ error "Unexpected GovId"
 
 runner :: forall (a :: Type). String -> BlockfrostServiceM a -> Aff a
 runner blockfrostApiKey action =

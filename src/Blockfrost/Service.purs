@@ -24,6 +24,8 @@ module Cardano.Blockfrost.Service
       , DelegationsAndRewards
       , Proposal
       , ProposalVotes
+      , DrepInfo
+      , DrepUpdates
       )
   , BlockfrostStakeCredential(BlockfrostStakeCredential)
   , BlockfrostEraSummaries(BlockfrostEraSummaries)
@@ -49,6 +51,7 @@ module Cardano.Blockfrost.Service
   , getProposalById
   , getProtocolParameters
   , getPubKeyHashDelegationsAndRewards
+  , getRegisteredDrepInfo
   , getScriptByHash
   , getScriptInfo
   , getSystemStart
@@ -92,9 +95,10 @@ import Affjax.ResponseFormat (string) as Affjax.ResponseFormat
 import Affjax.StatusCode (StatusCode(StatusCode)) as Affjax
 import Cardano.AsCbor (decodeCbor, encodeCbor)
 import Cardano.Blockfrost.BlockfrostBackend (BlockfrostBackend)
-import Cardano.Blockfrost.BlockfrostProtocolParameters (BlockfrostProtocolParameters)
+import Cardano.Blockfrost.BlockfrostProtocolParameters (BlockfrostProtocolParameters, Stringed)
 import Cardano.Blockfrost.Helpers (decodeAssetClass)
 import Cardano.Data.Lite (toBytes)
+import Cardano.Provider (DrepInfo) as Provider
 import Cardano.Provider
   ( Proposal
   , ProposalType
@@ -165,7 +169,7 @@ import Cardano.Types.DelegationsAndRewards (DelegationsAndRewards)
 import Cardano.Types.Ed25519KeyHash (fromBech32) as Ed25519KeyHash
 import Cardano.Types.EraSummaries (EraSummaries, EraSummary, EraSummaryParameters)
 import Cardano.Types.GeneralTransactionMetadata as GeneralTransactionMetadata
-import Cardano.Types.GovId (GovId(GovCredential), GovIdType(DRep), fromBech32) as GovId
+import Cardano.Types.GovId (GovId(GovCredential), GovIdType(DRep), fromBech32, toBech32) as GovId
 import Cardano.Types.NativeScript
   ( NativeScript(ScriptAll, ScriptAny, ScriptNOfK, ScriptPubkey, TimelockExpiry, TimelockStart)
   )
@@ -331,6 +335,10 @@ data BlockfrostEndpoint
   | Proposal GovernanceActionId
   -- /governance/proposals/{tx_hash}/{cert_index}/votes?page={page}&count={count}&order=asc
   | ProposalVotes { proposalRef :: GovernanceActionId, page :: Int, count :: Int }
+  -- /governance/dreps/{drep_id}
+  | DrepInfo Credential
+  -- /governance/dreps/{drep_id}/updates?page={page}&count={count}&order=desc
+  | DrepUpdates { cred :: Credential, page :: Int, count :: Int }
 
 derive instance Generic BlockfrostEndpoint _
 derive instance Eq BlockfrostEndpoint
@@ -396,6 +404,17 @@ realizeEndpoint endpoint =
         <> "&count="
         <> show count
         <> "&order=asc"
+    DrepInfo cred ->
+      "/governance/dreps/"
+        <> GovId.toBech32 (GovId.GovCredential { govIdType: GovId.DRep, cred })
+    DrepUpdates { cred, page, count } ->
+      "/governance/dreps/"
+        <> GovId.toBech32 (GovId.GovCredential { govIdType: GovId.DRep, cred })
+        <> "/updates?page="
+        <> show page
+        <> "&count="
+        <> show count
+        <> "&order=desc" -- newest first
 
 blockfrostGetRequest
   :: BlockfrostEndpoint
@@ -681,6 +700,75 @@ getVotesOnProposalWithPageLimit { maxPages } proposalRef
         case (Array.length votes < maxNumResultsOnPage) || pageLimitReached of
           true -> pure votesUnwrapped
           false -> append votesUnwrapped <$> ExceptT (worker $ page + 1)
+
+-- getRegisteredDrepInfo
+
+data DrepStatusAction
+  = Registered
+  | Deregistered
+  | Updated
+
+derive instance Eq DrepStatusAction
+
+instance DecodeAeson DrepStatusAction where
+  decodeAeson =
+    caseAesonString (Left (TypeMismatch "String"))
+      case _ of
+        "registered" -> pure Registered
+        "deregistered" -> pure Deregistered
+        "updated" -> pure Updated
+        unexpected ->
+          Left $ TypeMismatch $
+            "DrepStatusAction: expected 'registered', 'deregistered', or 'updated', but got: "
+              <> unexpected
+
+type BlockfrostDrepInfo =
+  { retired :: Boolean
+  , amount :: Stringed Coin
+  }
+
+type DrepUpdates = Array
+  { action :: DrepStatusAction
+  , deposit :: Maybe (Stringed Coin)
+  }
+
+getRegisteredDrepInfo
+  :: Credential
+  -> BlockfrostServiceM (Either ClientError (Maybe Provider.DrepInfo))
+getRegisteredDrepInfo drepCred =
+  runExceptT do
+    (mDrepInfo :: Maybe BlockfrostDrepInfo) <- ExceptT $
+      handle404AsNothing <<< handleBlockfrostResponse <$>
+        blockfrostGetRequest (DrepInfo drepCred)
+    case mDrepInfo of
+      Just { retired, amount: votingPower } | not retired -> do
+        updates <- ExceptT $ getDrepUpdates { page: one }
+        case Array.find (eq Registered <<< _.action) updates of
+          Just { deposit: Just deposit } ->
+            pure $ Just
+              { deposit: unwrap deposit
+              , votingPower: unwrap votingPower
+              }
+          _ ->
+            pure Nothing
+      _ -> pure Nothing
+  where
+  getDrepUpdates
+    :: { page :: Int }
+    -> BlockfrostServiceM (Either ClientError DrepUpdates)
+  getDrepUpdates { page } = runExceptT do
+    let maxNumResultsOnPage = 100
+    updates <- ExceptT $
+      handle404AsMempty <<< handleBlockfrostResponse <$> blockfrostGetRequest
+        ( DrepUpdates
+            { cred: drepCred
+            , page
+            , count: maxNumResultsOnPage
+            }
+        )
+    case Array.length updates < maxNumResultsOnPage of
+      true -> pure updates
+      false -> append updates <$> ExceptT (getDrepUpdates $ { page: page + 1 })
 
 --------------------------------------------------------------------------------
 -- Get utxos at address / by output reference
