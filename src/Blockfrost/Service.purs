@@ -742,23 +742,19 @@ getRegisteredDrepInfo drepCred =
         blockfrostGetRequest (DrepInfo drepCred)
     case mDrepInfo of
       Just { retired, amount: votingPower } | not retired -> do
-        updates <- ExceptT $ getDrepUpdates { page: one }
-        case Array.find (eq Registered <<< _.action) updates of
-          Just { deposit: Just deposit } ->
-            pure $ Just
-              { deposit: unwrap deposit
-              , votingPower: unwrap votingPower
-              }
-          _ ->
-            pure Nothing
+        deposit <- ExceptT $ getDrepDeposit { page: one }
+        pure $ deposit <#>
+          { deposit: _
+          , votingPower: unwrap votingPower
+          }
       _ -> pure Nothing
   where
-  getDrepUpdates
+  getDrepDeposit
     :: { page :: Int }
-    -> BlockfrostServiceM (Either ClientError DrepUpdates)
-  getDrepUpdates { page } = runExceptT do
+    -> BlockfrostServiceM (Either ClientError (Maybe Coin))
+  getDrepDeposit { page } = runExceptT do
     let maxNumResultsOnPage = 100
-    updates <- ExceptT $
+    (updates :: DrepUpdates) <- ExceptT $
       handle404AsMempty <<< handleBlockfrostResponse <$> blockfrostGetRequest
         ( DrepUpdates
             { cred: drepCred
@@ -766,9 +762,12 @@ getRegisteredDrepInfo drepCred =
             , count: maxNumResultsOnPage
             }
         )
-    case Array.length updates < maxNumResultsOnPage of
-      true -> pure updates
-      false -> append updates <$> ExceptT (getDrepUpdates $ { page: page + 1 })
+    case Array.find (eq Registered <<< _.action) updates of
+      Just { deposit } ->
+        pure $ unwrap <$> deposit
+      _ ->
+        if Array.length updates < maxNumResultsOnPage then pure Nothing
+        else ExceptT $ getDrepDeposit { page: page + 1 }
 
 --------------------------------------------------------------------------------
 -- Get utxos at address / by output reference
