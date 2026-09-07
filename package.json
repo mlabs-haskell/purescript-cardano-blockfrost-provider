@@ -1,0 +1,12 @@
+{
+  "type": "module",
+  "name": "cardano-blockfrost-provider",
+  "version": "2.3.0", 
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mlabs-haskell/purescript-cardano-blockfrost-provider"
+  },
+  "dependencies": {
+    "@mlabs-haskell/ctl-npm-meta": "2.0.0"
+  }
+}
