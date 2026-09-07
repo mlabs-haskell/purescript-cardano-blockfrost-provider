@@ -6,12 +6,15 @@ import Cardano.Blockfrost
 import Prelude
 
 import Cardano.AsCbor (decodeCbor)
+import Cardano.Provider (pprintClientError)
 import Cardano.Types (GovId(GovCredential, GovAction))
 import Cardano.Types.GovId (fromBech32, toBech32) as GovId
 import Control.Monad.Error.Class (liftMaybe, throwError)
 import Control.Monad.Logger.Trans (runLoggerT)
 import Control.Monad.Reader (runReaderT)
 import Data.ByteArray (hexToByteArray)
+import Data.Either (Either(Left, Right))
+import Data.FoldableWithIndex (forWithIndex_)
 import Data.Maybe (Maybe(Just, Nothing), fromJust)
 import Data.Newtype (wrap)
 import Data.UInt (fromInt) as UInt
@@ -46,7 +49,13 @@ main =
     proposal <- provider.getProposalById proposalRef
     liftEffect $ log $ "Proposal: " <> show proposal
     votes <- provider.getVotesOnProposal proposalRef
-    liftEffect $ log $ "Votes: " <> show votes
+    case votes of
+      Left err ->
+        throwError $ error $ "getVotesOnProposal failed with error: "
+          <> pprintClientError err
+      Right votes' ->
+        forWithIndex_ votes' \i vote ->
+          liftEffect $ log $ "Vote #" <> show i <> ": " <> show vote
     govId <-
       liftMaybe (error "Could not decode GovId from Bech32 string") $
         GovId.fromBech32 "drep1ytwmwvtd0a8lr45ssner2tjxzv5y8q03w3606yeald9mdmgmwecja"

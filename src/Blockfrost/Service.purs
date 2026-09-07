@@ -169,7 +169,7 @@ import Cardano.Types.DelegationsAndRewards (DelegationsAndRewards)
 import Cardano.Types.Ed25519KeyHash (fromBech32) as Ed25519KeyHash
 import Cardano.Types.EraSummaries (EraSummaries, EraSummary, EraSummaryParameters)
 import Cardano.Types.GeneralTransactionMetadata as GeneralTransactionMetadata
-import Cardano.Types.GovId (GovId(GovCredential), GovIdType(DRep), fromBech32, toBech32) as GovId
+import Cardano.Types.GovId (GovId(GovCredential), GovIdType(DRep, CCHot), fromBech32, toBech32) as GovId
 import Cardano.Types.NativeScript
   ( NativeScript(ScriptAll, ScriptAny, ScriptNOfK, ScriptPubkey, TimelockExpiry, TimelockStart)
   )
@@ -193,9 +193,9 @@ import Control.Monad.Reader.Class (ask, asks)
 import Control.Monad.Reader.Trans (ReaderT, runReaderT)
 import Control.Parallel (parTraverse)
 import Data.Array (catMaybes)
-import Data.Array (find, length) as Array
+import Data.Array (filter, find, length) as Array
 import Data.Bifunctor (lmap)
-import Data.ByteArray (ByteArray, byteArrayToHex, hexToByteArray)
+import Data.ByteArray (ByteArray, byteArrayToHex)
 import Data.DateTime.Instant (instant, toDateTime)
 import Data.Either (Either(Left, Right), either, hush, note)
 import Data.Generic.Rep (class Generic)
@@ -633,12 +633,13 @@ voteFromBlockfrostString =
 voterFromBlockfrostFields :: { voter_role :: String, voter :: String } -> Maybe Voter
 voterFromBlockfrostFields { voter_role: role, voter } =
   case role of
-    "constitutional_committee" ->
-      -- FIXME: For CC voters Blockfrost returns a bare hex hash in the `voter`
-      -- field with no discriminator between a key hash and a script hash, so
-      -- script-based CC members are misclassified as `PubKeyHashCredential`
-      -- here. Tracking upstream: https://github.com/blockfrost/openapi/issues/465
-      Cc <<< PubKeyHashCredential <$> (decodeCbor <<< wrap =<< hexToByteArray voter)
+    "constitutional_committee" -> do
+      govId <- GovId.fromBech32 voter
+      case govId of
+        GovId.GovCredential { govIdType, cred } | govIdType == GovId.CCHot ->
+          Just $ Cc cred
+        _ ->
+          Nothing
     "drep" -> do
       govId <- GovId.fromBech32 voter
       case govId of
@@ -651,7 +652,10 @@ voterFromBlockfrostFields { voter_role: role, voter } =
     _ ->
       Nothing
 
-newtype BlockfrostVoteOnProposal = BlockfrostVoteOnProposal VoteOnProposal
+newtype BlockfrostVoteOnProposal = BlockfrostVoteOnProposal
+  { vote :: VoteOnProposal
+  , counted :: Boolean
+  }
 
 derive instance Generic BlockfrostVoteOnProposal _
 derive instance Newtype BlockfrostVoteOnProposal _
@@ -660,25 +664,25 @@ instance Show BlockfrostVoteOnProposal where
   show = genericShow
 
 instance DecodeAeson BlockfrostVoteOnProposal where
-  decodeAeson aeson = do
-    ({ voter_role, voter, vote } :: { voter_role :: String, voter :: String, vote :: String }) <-
-      decodeAeson aeson
-    vote' <-
-      note (TypeMismatch "Expected string repr of Vote") $
-        voteFromBlockfrostString vote
-    voter' <-
-      note (TypeMismatch "Could not build Voter from voter and voter_role") $
-        voterFromBlockfrostFields { voter_role, voter }
-    pure $ wrap
-      { voter: voter'
-      , vote: vote'
-      }
+  decodeAeson =
+    caseAesonObject (Left (TypeMismatch "Object")) \obj -> do
+      vote <-
+        (note (TypeMismatch "Expected string repr of Vote") <<< voteFromBlockfrostString)
+          =<< getField obj "vote"
+      voter' <- getField obj "voter"
+      voter_role <- getField obj "voter_role"
+      voter <-
+        note (TypeMismatch "Could not build Voter from voter and voter_role") $
+          voterFromBlockfrostFields
+            { voter: voter'
+            , voter_role
+            }
+      counted <- getField obj "counted"
+      pure $ wrap
+        { vote: { voter, vote }
+        , counted
+        }
 
--- FIXME: Blockfrost returns the full vote-tx history, including votes no
--- longer counted in the ledger (superseded by a later vote, or cast by a
--- DRep that later deregistered). Ogmios' `queryLedgerState/governanceProposals`
--- returns only currently-counted votes, so the two providers can diverge
--- significantly. Tracking upstream: https://github.com/blockfrost/openapi/issues/466
 getVotesOnProposal
   :: GovernanceActionId
   -> BlockfrostServiceM (Either ClientError (Array VoteOnProposal))
@@ -703,7 +707,7 @@ getVotesOnProposalWithPageLimit { maxPages } proposalRef
             (ProposalVotes { proposalRef, page, count: maxNumResultsOnPage })
             <#> handle404AsMempty <<< handleBlockfrostResponse
         let
-          votesUnwrapped = unwrap <$> votes
+          votesUnwrapped = map _.vote $ Array.filter _.counted $ unwrap <$> votes
           pageLimitReached = maybe false (page >= _) maxPages
         case (Array.length votes < maxNumResultsOnPage) || pageLimitReached of
           true -> pure votesUnwrapped
