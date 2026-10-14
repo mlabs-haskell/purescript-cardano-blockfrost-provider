@@ -1,4 +1,4 @@
-.PHONY: clean build format
+.PHONY: clean build format demo
 
 ps-sources := $(shell fd --no-ignore-parent -epurs)
 nix-sources := $(shell fd --no-ignore-parent -enix --exclude='spago*')
@@ -21,3 +21,6 @@ format: requires-nix-shell
 	purs-tidy format-in-place ${ps-sources}
 	@echo -e '\n2. Formatting Nix sources:'
 	nixpkgs-fmt ${nix-sources}
+
+demo: requires-nix-shell
+	spago run --main Demo.Cardano.Blockfrost.Governance

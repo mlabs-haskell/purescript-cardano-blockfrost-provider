@@ -24,6 +24,8 @@ import Cardano.Blockfrost.Service
       , PoolIds
       , PoolParameters
       , DelegationsAndRewards
+      , Proposal
+      , ProposalVotes
       )
   , BlockfrostStakeCredential(BlockfrostStakeCredential)
   , BlockfrostEraSummaries(BlockfrostEraSummaries)
@@ -46,6 +48,7 @@ import Cardano.Blockfrost.Service
   , getEraSummaries
   , getOutputAddressesByTxHash
   , getPoolIds
+  , getProposalById
   , getProtocolParameters
   , getPubKeyHashDelegationsAndRewards
   , getScriptByHash
@@ -55,6 +58,8 @@ import Cardano.Blockfrost.Service
   , getTxMetadata
   , getUtxoByOref
   , getValidatorHashDelegationsAndRewards
+  , getVotesOnProposal
+  , getVotesOnProposalWithPageLimit
   , runBlockfrostServiceM
   , runBlockfrostServiceTestM
   , submitTx

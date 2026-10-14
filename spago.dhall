@@ -10,6 +10,7 @@
   , "cardano-data-lite"
   , "cardano-provider"
   , "cardano-types"
+  , "console"
   , "datetime"
   , "effect"
   , "either"
@@ -23,6 +24,7 @@
   , "media-types"
   , "monad-logger"
   , "newtype"
+  , "node-process"
   , "numbers"
   , "ordered-collections"
   , "parallel"
@@ -34,5 +36,5 @@
   , "uint"
   ]
 , packages = ./packages.dhall
-, sources = [ "src/**/*.purs" ]
+, sources = [ "src/**/*.purs", "demo/**/*.purs" ]
 }

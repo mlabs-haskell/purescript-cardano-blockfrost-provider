@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and we follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# v3.0.0
+
+## Added
+
+- Governance Provider queries ([#8](https://github.com/mlabs-haskell/purescript-cardano-blockfrost-provider/pull/8)):
+  - `getProposalById`
+  - `getVotesOnProposal`
+  - `getRegisteredDrepInfo`
+- `demo/Governance.purs` exercising the new queries.
+
 # v2.3.0
 
 ## Added
